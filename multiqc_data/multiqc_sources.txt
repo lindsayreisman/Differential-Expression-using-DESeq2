@@ -1,0 +1,7 @@
+Module	Section	Sample Name	Source
+FastQC	all_sections	SRR7819992.filt	/scratch/ljr390/ngs.finalproject/control3/SRR7819992.filt_fastqc.zip
+FastQC	all_sections	SRR7819995.filt	/scratch/ljr390/ngs.finalproject/treated3/SRR7819995.filt_fastqc.zip
+FastQC	all_sections	SRR7819990.filt	/scratch/ljr390/ngs.finalproject/control1/SRR7819990.filt_fastqc.zip
+FastQC	all_sections	SRR7819994.filt	/scratch/ljr390/ngs.finalproject/treated2/SRR7819994.filt_fastqc.zip
+FastQC	all_sections	SRR7819993.filt	/scratch/ljr390/ngs.finalproject/treated1/SRR7819993.filt_fastqc.zip
+FastQC	all_sections	SRR7819991.filt	/scratch/ljr390/ngs.finalproject/control2/SRR7819991.filt_fastqc.zip
