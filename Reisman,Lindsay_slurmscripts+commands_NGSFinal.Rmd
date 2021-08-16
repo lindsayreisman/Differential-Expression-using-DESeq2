@@ -1,0 +1,280 @@
+---
+title: "Reisman, Lindsay_slurmscripts_commandline_NGSFinal"
+author: "Lindsay Reisman"
+date: "8/15/2020"
+output: html_document
+---
+
+Please see the following slurm scripts and command lines executed to complete my final project 
+
+### slurm script for trimming fastp and running fastQC for each sample 
+
+```{bash, eval=FALSE, include=TRUE}
+#!/bin/bash
+#
+#SBATCH --nodes=1
+#SBATCH --tasks-per-node=1
+#SBATCH --cpus-per-task=1
+#SBATCH --time=8:00:00
+#SBATCH --mem=4GB
+#SBATCH --job-name=fastp_array
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=ljr390@nyu.edu
+#SBATCH --array=1-6
+
+module purge
+
+# Path to 3-column (tab-delimited) table with sample name, fastq 1 file name, and fastq 2 file name
+
+table=/scratch/courses/BI7653/project.2020/project_fastqs.txt
+
+line="$(head -n $SLURM_ARRAY_TASK_ID $table | tail -n 1)"
+sample="$(printf "%s" "${line}" | cut -f1)"
+fq="$(printf "%s" "${line}" | cut -f2)"
+
+# Print to standard out the array index and the sample name
+
+echo Processing array index: $SLURM_ARRAY_TASK_ID sample: $sample
+
+
+mkdir $sample
+cd $sample
+
+fq_fastp=$(basename $fq .fastq.gz).filt.fastq.gz
+
+# Load the module
+
+module load fastp/20190829
+
+
+fqdir=/scratch/courses/BI7653/project.2020/fastqs
+
+
+# Run fastp on sample fastqs
+
+
+fastp -i $fqdir/$fq \
+-o $fq_fastp \
+--length_required 36 \
+--trim_poly_g \ 
+--html $sample.fastp.html \
+--json $sample.fastp.json
+
+
+echo _ESTATUS_ [ fastp for $sample ]: $?
+  
+# Purge fastp and load fastqc module
+  
+module purge
+module load fastqc/0.11.8
+
+# Run fastqc
+
+fastqc $fq_fastp
+
+echo _ESTATUS_ [ fastqc for $sample ]: $?
+  
+echo _END_ [ fastp for $sample ]: $(date)
+```
+
+### Generate MultiQC report using command line 
+
+```{bash,eval=FALSE,include=TRUE}
+# search for all the fastqc sample files to create one text file to run multiQC report. 
+find "${PWD}" -name \*fastqc.zip > fastqc_files.txt
+
+# Load Module multiqc
+multiqc/intel/20170330
+
+# Execute command line to generate multiqc report
+
+[ljr390@c36-15 ngs.finalproject]$ multiqc --file-list /scratch/ljr390/ngs.finalproject/fastqc_files.txt
+[INFO   ]         multiqc : This is MultiQC v1.0.dev0
+[INFO   ]         multiqc : Template    : default
+[INFO   ]         multiqc : Searching '/scratch/ljr390/ngs.finalproject/treated3/SRR7819995.filt_fastqc.zip'
+[INFO   ]         multiqc : Searching '/scratch/ljr390/ngs.finalproject/control2/SRR7819991.filt_fastqc.zip'
+[INFO   ]         multiqc : Searching '/scratch/ljr390/ngs.finalproject/treated2/SRR7819994.filt_fastqc.zip'
+[INFO   ]         multiqc : Searching '/scratch/ljr390/ngs.finalproject/control1/SRR7819990.filt_fastqc.zip'
+[INFO   ]         multiqc : Searching '/scratch/ljr390/ngs.finalproject/treated1/SRR7819993.filt_fastqc.zip'
+[INFO   ]         multiqc : Searching '/scratch/ljr390/ngs.finalproject/control3/SRR7819992.filt_fastqc.zip'
+[INFO   ]          fastqc : Found 6 reports
+[INFO   ]         multiqc : Report      : multiqc_report.html
+[INFO   ]         multiqc : Data        : multiqc_data
+[INFO   ]         multiqc : MultiQC complete
+
+
+```
+
+### Normalize Fasta Picard Tools slurm script 
+
+```{bash, eval=FALSE, include=TRUE }
+#!/bin/bash
+#
+#SBATCH --nodes=1
+#SBATCH --tasks-per-node=1
+#SBATCH --cpus-per-task=1
+#SBATCH --time=8:00:00
+#SBATCH --mem=4GB
+#SBATCH --job-name=normalize_task
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=ljr390@nyu.edu
+
+module purge
+
+module load  picard/2.17.11
+
+
+java -jar $PICARD_JAR NormalizeFasta \
+      I=/scratch/ljr390/ngs.finalproject/Homo_sapiens.GRCh38.cdna.all.fa \
+      O=normalized_GRCh38.cdna.all.fa
+```
+
+### Shuffle Normalized fasta using bbmap slurm script 
+```{bash, eval=FALSE, include=TRUE}
+#!/bin/bash
+#
+#SBATCH --nodes=1
+#SBATCH --tasks-per-node=1
+#SBATCH --cpus-per-task=1
+#SBATCH --time=8:00:00
+#SBATCH --mem=4GB
+#SBATCH --job-name=bbmap_shuffle
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=ljr390@nyu.edu
+
+module purge
+
+module load  bbmap/38.42
+
+
+shuffle.sh in=/scratch/ljr390/ngs.finalproject/normalized_GRCh38.cdna.all.fa out=/scratch/ljr390/ngs.finalproject/shuffled_normalized_GRCh38.cdna.all.fa
+```
+
+### Salmon Index slurm script 
+```{bash,eval=FALSE, include=TRUE}
+#!/bin/bash
+#
+#SBATCH --nodes=1
+#SBATCH --tasks-per-node=1
+#SBATCH --cpus-per-task=2
+#SBATCH --time=24:00:00
+#SBATCH --mem=16GB
+#SBATCH --job-name=salmon_index
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=ljr390@nyu.edu
+
+module purge
+
+module load salmon/1.0.0
+
+salmon index -t shuffled_normalized_GRCh38.cdna.all.fa  -i shuffled_normalized_all_GRCh38_index -k 31
+
+echo _ESTATUS_ [ salmon index ]: $?
+echo _END_ [ salmon_index.slurm ]: $(date)
+
+```
+
+### Running Salmon slurm script 
+```{bash,eval=FALSE, include=TRUE}
+#!/bin/bash
+#
+#SBATCH --nodes=1
+#SBATCH --tasks-per-node=1
+#SBATCH --cpus-per-task=6
+#SBATCH --time=24:00:00
+#SBATCH --mem=8GB
+#SBATCH --job-name=salmon
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=ljr390@nyu.edu
+#SBATCH --array=1-6
+
+module purge
+
+module load salmon/1.0.0
+
+echo The array index is: ${SLURM_ARRAY_TASK_ID}
+
+table=/scratch/courses/BI7653/project.2020/project_fastqs.txt
+line="$(head -n ${SLURM_ARRAY_TASK_ID} "${table}" | tail -n 1)"
+sample="$(printf "%s" "${line}" | cut -f1)"
+fq="$(printf "%s" "${line}" | cut -f2)"
+
+
+fqdir=/scratch/courses/BI7653/project.2020/fastqs
+salmon_index_dir=/scratch/ljr390/ngs.finalproject/shuffled_normalized_all_GRCh38_index
+
+mkdir "${sample}"
+cd "${sample}"
+
+salmon quant -i ${salmon_index_dir} -l A -1 $fqdir/$fq --validateMappings --gcBias --threads ${SLURM_CPUS_PER_TASK} -o $sample.transcripts_quant
+
+echo _ESTATUS_ [ salmon quant $sample ]: $?
+echo _END_ [ salmon.slurm ]: $(date)
+
+
+```
+
+### Downlod files to from HPC to personal computer
+
+```{bash, eval=FALSE, include=TRUE}
+scp -r ljr390@dtn.nyu.edu: /scratch/ljr390/ngs.finalproject .
+```
+
+
+### Run tximport
+
+```{r}
+library(tximport)
+
+sample_names <- c('control1','control2','control3','treated1','treated2')
+sample_condition <- c(rep('control',3),rep('treated',2))
+
+files<-file.path("/Users/lindsayreisman/salmon_task",sample_names, paste(sample_names,".transcripts_quant",sep=""),'quant.sf')
+
+names(files) <- sample_names
+
+tx2gene <- read.csv("/Users/lindsayreisman/tx2gene.csv",header=F)
+
+txi<-tximport(files, type="salmon", tx2gene=tx2gene)
+
+samples <- data.frame(sample_names=sample_names,condition=sample_condition)
+row.names(samples) <- sample_names
+
+
+library("DESeq2") 
+
+ddsTxi <- DESeqDataSetFromTximport(txi,
+                                   colData = samples,
+                                   design = ~ condition)
+
+keep <- rowSums(counts(ddsTxi)) >= 10
+dds <- ddsTxi[keep,]
+dds <- DESeq(dds)
+
+res <- results(dds, contrast = c('condition','control','treated') )
+resOrdered <- res[order(res$pvalue),] 
+head(resOrdered,10)
+
+
+library(ashr)
+res.shrunk <- lfcShrink(dds, type='ashr',contrast =c('condition','control','treated') )
+
+res.shrunkOrdered <- res.shrunk[order(res.shrunk$pvalue),]
+resOrdered
+
+
+plotMA(resOrdered)
+plotMA(res.shrunkOrdered)
+
+library(ggplot2)
+ggplot(as.data.frame(res.shrunkOrdered),aes(pvalue)) + geom_histogram(fill="light blue",color='black')
+
+
+head(res.shrunkOrdered,10)
+res.shrunkOrdered
+
+res.shrunkOrdered[ row.names(res.shrunkOrdered) %in% c('ENSG00000119720.18','ENSG00000196396.10','ENSG00000163041.11'), ]
+
+plotDispEsts(dds)
+```
+

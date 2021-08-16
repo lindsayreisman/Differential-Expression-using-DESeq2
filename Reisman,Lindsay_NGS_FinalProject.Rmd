@@ -1,0 +1,129 @@
+---
+title: "Reisman,Lindsay_FinalProject"
+author: "Lindsay Reisman"
+date: "8/6/2020"
+output: html_document
+---
+### INTRODUCTION 
+
+```{bash,eval=FALSE, include=TRUE}
+Differential Gene Expression involves a series of workflows to analyze the expression levels of conditioned sets of samples (control vs. treated) to make statistical inferences of important role playing genes. Transcripts Per Million is used to be converted to gene level counts to therefore make statistical analysis on the dataset. In this study, breast cancer cells and controls are being examined in triplicate to determine if there are notable transcriptomic occurences without the presence of NRDE2 gene. Using a stranded DGE analysis we are able to get a better understanding of the transcriptome.
+```
+
+### METHODS 
+
+```{r,eval=FALSE,  include=TRUE}
+
+  Using fastp and fastqc will aid in trimming and run quality control on fastp files for each the 6 samples. Since these single-ended libraries were run on an Illumina Nextseq, filter out any polyG sequences by using the argument --trim_poly_g in our slurm script. We made sure there was a minimum required length of 36 to pass through, although the recommended length is 76. After generating my fastp and fastqc files, the exit status for my fastp files was 127. I ran 3 times and after speaking to the professor, I continued with the files that were generated. 
+  Multiqc is able to combine the fastqc from all samples into one file to compare them which is ideal for spotting any issues with the data and samples. Using the commandline, a search was executed to find all fastqc files for all samples. A text file is generated with all the fastqc files. Using the multiqc module, we call the file list and create a report. The samples all had a high duplication rate within the same range, but we can expect higher duplication rates for RNAseq. 
+  A fasta file was downloaded into the scratch directory on the HPC and unzipped. The fasta is normalized using picard tools and specifying the path to $PICARD_JAR which is key in getting the script to run. Before running Salmon, we want to shuffle the normalized fasta so the alignments observations should be random. Using bbmap program, a randomized shuffle of the normalized fasta is performed. 
+  The next step in the workflow is indexing the normalized shuffled fasta to create index files for the reference. A k-mer length of 31 is chosen. Once we have index files created, Salmon quant can be run. For single ended libraries we use the -r command to read through the fastqs. The validatemapping argument is key for aligning the reads. --gcBias argument is passed, I decided to use this filter even though I have the GC% in multiQC, I thought it would be interesting to compare. The library type is stranded, and has both forward and reverse reads. 
+  With the quant files generated from Salmon, we are able to proceed to calculating a statistical meaning of the data. The entire ngs.finalproject directory was downloaded to my personal computer to do the statistical computations using DESeq2 and tximport. I am reporting the shrunken log fold-change estimates due to the ability to see more differentially expressed genes clearly. I was not able to generate a salmon output for treated3 sample. A exit code of 255 kept generating after each run. 
+```
+
+
+### RESULTS 
+A total number of reads and mapping rate of all samples:
+```{r}
+results<-read.csv("/Users/lindsayreisman/Resultstable_NGSfinal.csv",header=TRUE)
+results
+```
+
+Statistically significant genes at your chosen FDR
+```{r}
+
+sample_names <- c('control1','control2','control3','treated1','treated2')
+sample_condition <- c(rep('control',3),rep('treated',2))
+
+files<-file.path("/Users/lindsayreisman/salmon_task",sample_names, paste(sample_names,".transcripts_quant",sep=""),'quant.sf')
+
+names(files) <- sample_names
+
+tx2gene <- read.csv("/Users/lindsayreisman/tx2gene.csv",header=F)
+
+library(tximport)
+txi<-tximport(files, type="salmon", tx2gene=tx2gene)
+
+samples <- data.frame(sample_names=sample_names,condition=sample_condition)
+row.names(samples) <- sample_names
+
+
+library("DESeq2") 
+
+ddsTxi <- DESeqDataSetFromTximport(txi,
+                                   colData = samples,
+                                   design = ~ condition)
+
+keep <- rowSums(counts(ddsTxi)) >= 10
+dds <- ddsTxi[keep,]
+dds <- DESeq(dds)
+
+res <- results(dds, contrast = c('condition','control','treated') )
+resOrdered <- res[order(res$pvalue),] 
+
+row<-resOrdered[ row.names(resOrdered),]
+sig <- row[!is.na(row$padj) & #select the differentially expressed genes using a FDR 10%
+row$padj<0.10 &
+abs(row$log2FoldChange)>=1,]
+
+sig
+
+```
+
+
+A table with the 10 most highly significant differentially expressed genes:
+```{r}
+summary(resOrdered)
+head(resOrdered,10)
+```
+
+
+Sample PCA:
+```{r}
+rld <- rlog(dds)
+plotPCA(rld)
+
+
+```
+
+An MA plot:
+```{r}
+
+library(ashr)
+res.shrunk <- lfcShrink(dds, type='ashr',contrast =c('condition','control','treated') )
+
+res.shrunkOrdered <- res.shrunk[order(res.shrunk$pvalue),]
+
+plotMA(resOrdered)
+plotMA(res.shrunkOrdered)
+```
+
+Dispersion-by-mean plot:
+```{r}
+plotDispEsts(dds)
+```
+
+A raw p-value histogram:
+```{r}
+library(ggplot2)
+ggplot(as.data.frame(res.shrunkOrdered),aes(pvalue)) + geom_histogram(fill="light blue",color='black')
+
+
+```
+
+```{r}
+x<-results(dds)
+write.table(x, file="/Users/lindsayreisman/DESeq2Results.txt", sep="\t")
+```
+
+
+### DISCUSSION
+
+```{bash,eval=FALSE,include=TRUE }
+
+Based upon the figures shown in the results section we are able to come to a conclusion about the data. The salmon outputs gave us good mapping coverage of the dataset. The PCA plot shows there are no batch effects present. Using the shrunken data we see that there are a lot of diffentially expressed transcripts involved with NRDE2 gene. There is at least a two fold change in the log value which leads me to believe that the these transcripts are not only just statiscally meaningful but also biologically meaningful. ENSG00000119720.18  has the highest logfold2change and the smallest pvalue indicating that this transcript may be very important factor in protein coding process.  
+
+```
+
+
+
